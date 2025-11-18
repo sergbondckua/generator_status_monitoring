@@ -56,7 +56,7 @@ def main():
     try:
         monitor.start()
     except KeyboardInterrupt:
-        print("\n\n⚠️ Зупинка системи...")
+        print("\n⚠️ Зупинка системи...")
         monitor.stop()
     except Exception as e:
         import logging
