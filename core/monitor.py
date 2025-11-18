@@ -102,7 +102,7 @@ class GeneratorMonitor:
                 time.sleep(self._config.check_interval)
 
             except KeyboardInterrupt:
-                self._logger.info("\n⚠️ Отримано сигнал зупинки")
+                self._logger.info("⚠️ Отримано сигнал зупинки")
                 break
             except Exception as e:
                 self._logger.error(f"Помилка в циклі: {e}")
@@ -143,7 +143,7 @@ class GeneratorMonitor:
         # Відправка сповіщень
         self._notifier.send_message(message)
 
-        caption = f"{emoji} <b>{status}</b>\\n{timestamp}"
+        caption = f"{emoji} <b>{status}</b>\n{timestamp}"
         self._notifier.send_image(visual_frame, caption)
 
         # Збереження знімка
