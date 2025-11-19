@@ -35,7 +35,7 @@ def main():
         detection=DetectionConfig(
             roi=(485, 435, 40, 20),
             bright_threshold=190,
-            min_bright_pixels=5,
+            min_bright_pixels=50,
         ),
         telegram=TelegramConfig(
             bot_token=env.str("TELEGRAM_BOT_TOKEN"),
