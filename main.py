@@ -33,7 +33,7 @@ def main():
             stream_path=env.str("CAMERA_RTSP_URL"),
         ),
         detection=DetectionConfig(
-            roi=(490, 435, 45, 20),
+            roi=(485, 435, 40, 20),
             bright_threshold=190,
             min_bright_pixels=5,
         ),
@@ -56,7 +56,7 @@ def main():
     try:
         monitor.start()
     except KeyboardInterrupt:
-        print("\n⚠️ Зупинка системи...")
+        print("⚠️ Зупинка системи...")
         monitor.stop()
     except Exception as e:
         import logging

@@ -7,6 +7,7 @@ import numpy as np
 
 from interfaces.base import ICamera, IDetector, INotifier
 from config.settings import MonitorConfig, GeneratorState
+import notification.const_text as ct
 from visualization.visualizer import FrameVisualizer
 
 
@@ -17,11 +18,11 @@ class GeneratorMonitor:
     """
 
     def __init__(
-        self,
-        config: MonitorConfig,
-        camera: ICamera,
-        detector: IDetector,
-        notifier: INotifier,
+            self,
+            config: MonitorConfig,
+            camera: ICamera,
+            detector: IDetector,
+            notifier: INotifier,
     ):
         """
         Ініціалізація моніторингу
@@ -103,6 +104,7 @@ class GeneratorMonitor:
 
             except KeyboardInterrupt:
                 self._logger.info("⚠️ Отримано сигнал зупинки")
+                self.stop()
                 break
             except Exception as e:
                 self._logger.error(f"Помилка в циклі: {e}")
@@ -130,10 +132,18 @@ class GeneratorMonitor:
         # Логування
         emoji = "🟢" if is_on else "🔴"
         status = "УВІМКНЕНО" if is_on else "ВИМКНЕНО"
+        lamp_status = "світиться" if is_on else "не світиться"
         self._logger.info(f"{emoji} Генератор {status}")
 
         # Створення повідомлення
-        message = self._create_state_message(is_on, timestamp, bright_pixels)
+        # message = self._create_state_message(is_on, timestamp, bright_pixels)
+        message = ct.msg_state_lamp.format(
+            emoji=emoji,
+            status=status,
+            timestamp=timestamp,
+            lamp_status=lamp_status,
+            bright_pixels=bright_pixels,
+        )
 
         # Візуалізація
         visual_frame = self._visualizer.visualize(
@@ -155,16 +165,25 @@ class GeneratorMonitor:
     def _create_state_message(
             is_on: bool, timestamp: str, bright_pixels: int
     ) -> str:
-        """Створення повідомлення про стан"""
+        """
+        Створення повідомлення про стан:
+            - емоджі (червоний або зелений)
+            - статус (УВІМКНЕНО або ВИМКНЕНО)
+            - час
+            - кількість яскравих пікселів
+        """
         emoji = "🟢" if is_on else "🔴"
         status = "УВІМКНЕНО" if is_on else "ВИМКНЕНО"
         lamp_status = "світиться" if is_on else "не світиться"
 
-        message = f"{emoji} <b>ГЕНЕРАТОР {status}</b>\n\n"
-        message += f"⏰ Час: {timestamp}\n"
-        message += f"💡 Лампочка {lamp_status}\n"
-        message += f"📊 Яскравих пікселів: {bright_pixels}"
-
+        # Створення повідомлення
+        message = ct.msg_state_lamp.format(
+            emoji=emoji,
+            status=status,
+            timestamp=timestamp,
+            lamp_status=lamp_status,
+            bright_pixels=bright_pixels,
+        )
         return message
 
     def _save_snapshot(self, frame: np.ndarray, prefix: str):
@@ -179,31 +198,33 @@ class GeneratorMonitor:
         self._logger.info(f"💾 Знімок: {filename}")
 
     def _send_startup_notification(self):
-        """Сповіщення про запуск"""
-        message = f"""
-🚀 <b>МОНІТОРИНГ ЗАПУЩЕНО</b>
-
-⏰ Час: {self._start_time.strftime("%d.%m.%Y %H:%M:%S")}
-📹 Камера: {self._config.camera.ip}
-🔄 Інтервал: {self._config.check_interval} сек.
-
-Система активна.
-"""
+        """Сповіщення про запуск моніторингу.
+        - час запуску
+        - IP-адрес камери
+        - інтервал перевір
+        """
+        # Створення повідомлення
+        message = ct.msg_startup_monitor.format(
+            start_time=self._start_time.strftime("%d.%m.%Y %H:%M:%S"),
+            camera_ip=self._config.camera.ip,
+            check_interval=self._config.check_interval,
+        )
+        # Відправка повідомлення
         self._notifier.send_message(message)
 
     def _send_shutdown_notification(self):
         """Сповіщення про зупинку"""
         if self._start_time:
+            # Оцінка часу роботи
             duration = datetime.now() - self._start_time
             hours = duration.total_seconds() / 3600
 
-            message = f"""
-🛑 <b>МОНІТОРИНГ ЗУПИНЕНО</b>
+            # Створення повідомлення
+            message = ct.msg_shutdown_monitor.format(
+                date_time=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
+                duration=round(hours, 2),
+                state_change_count=self._state_change_count
+            )
 
-⏰ Час: {datetime.now().strftime("%d.%m.%Y %H:%M:%S")}
-⏱️ Тривалість: {hours:.2f} год.
-🔄 Змін стану: {self._state_change_count}
-
-Система зупинена.
-"""
+            # Відправка повідомлення
             self._notifier.send_message(message)
