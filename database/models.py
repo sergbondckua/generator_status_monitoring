@@ -64,6 +64,6 @@ class FuelConfig:
     Конфігурація витрат палива
     """
 
-    fuel_rate_per_hour: float = 1.5  # л/год
-    fuel_tank_capacity: float = 20.0  # л
-    fuel_price_per_liter: float = 50.0  # грн/л
+    fuel_rate_per_hour: float = 1.4  # л/год
+    fuel_tank_capacity: float = 6.0  # л
+    fuel_price_per_liter: float = 60.0  # грн/л

@@ -300,7 +300,7 @@ class DatabaseRepository:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO generator_events (timestamp, event_type, bright_pixels, snapshot_path, message)
+                INSERT INTO generator_events (timestamp, event_type, bright_pixels, message)
                 VALUES (?, ?, ?, ?)
             """,
                 (timestamp, event_type, bright_pixels, message),
@@ -334,7 +334,7 @@ class DatabaseRepository:
             row = cursor.fetchone()
 
             if not row:
-                return FuelConfig(1.5, 20.0, 50.0)
+                return FuelConfig(1.4, 6.0, 60.0)
 
             return FuelConfig(
                 fuel_rate_per_hour=row["fuel_rate_per_hour"],

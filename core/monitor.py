@@ -5,6 +5,8 @@ from datetime import datetime
 from typing import Optional
 import numpy as np
 
+from database.repository import DatabaseRepository
+from database.statistics import StatisticsService
 from interfaces.base import ICamera, IDetector, INotifier
 from config.settings import MonitorConfig, GeneratorState
 import notification.const_text as ct
@@ -18,11 +20,12 @@ class GeneratorMonitor:
     """
 
     def __init__(
-            self,
-            config: MonitorConfig,
-            camera: ICamera,
-            detector: IDetector,
-            notifier: INotifier,
+        self,
+        config: MonitorConfig,
+        camera: ICamera,
+        detector: IDetector,
+        notifier: INotifier,
+        db_repository: DatabaseRepository,
     ):
         """
         Ініціалізація моніторингу
@@ -38,8 +41,11 @@ class GeneratorMonitor:
         self._detector = detector
         self._notifier = notifier
         self._visualizer = FrameVisualizer()
+        self._db = db_repository
+        self._stats = StatisticsService(db_repository)
 
         self._current_state: GeneratorState = GeneratorState.UNKNOWN
+        self._active_session_id: Optional[int] = None
         self._is_running = False
         self._start_time: Optional[datetime] = None
         self._state_change_count = 0
@@ -58,25 +64,41 @@ class GeneratorMonitor:
         self._start_time = datetime.now()
 
         self._logger.info("=" * 40)
-        self._logger.info("🚀 Запуск системи моніторингу")
+        self._logger.info("🚀 Запуск системи моніторингу з БД")
         self._logger.info("=" * 40)
+
+        # Перевіряємо чи є незавершена сесія
+        active_session = self._db.get_active_session()
+        if active_session:
+            self._logger.warning(
+                f"Знайдено незавершену сесію #{active_session}"
+            )
+            self._active_session_id = active_session
 
         self._send_startup_notification()
         self._main_loop()
 
     def stop(self):
-        """Зупинка моніторингу"""
+        """Зупинка"""
         self._is_running = False
+
+        # Завершуємо активну сесію якщо є
+        if self._active_session_id:
+            self._logger.warning(
+                f"Завершення активної сесії #{self._active_session_id}"
+            )
+            self._db.end_session(
+                self._active_session_id, 0, "Система зупинена"
+            )
+
         self._camera.disconnect()
         self._send_shutdown_notification()
-
         self._logger.info("🛑 Моніторинг зупинено")
 
     def _main_loop(self):
-        """Основний цикл моніторингу"""
+        """Основний цикл"""
         while self._is_running:
             try:
-                # Підключення до камери
                 if not self._camera.is_connected():
                     if not self._camera.connect():
                         self._logger.warning(
@@ -85,21 +107,15 @@ class GeneratorMonitor:
                         time.sleep(self._config.reconnect_delay)
                         continue
 
-                # Отримання та обробка кадру
                 ret, frame = self._camera.get_frame()
 
                 if not ret or frame is None:
-                    self._logger.warning(
-                        "Не вдалося отримати кадр. Переподключення..."
-                    )
+                    self._logger.warning("Не вдалося отримати кадр")
                     self._camera.disconnect()
                     time.sleep(self._config.reconnect_delay)
                     continue
 
-                # Визначення стану
                 self._process_frame(frame)
-
-                # Затримка
                 time.sleep(self._config.check_interval)
 
             except KeyboardInterrupt:
@@ -107,7 +123,7 @@ class GeneratorMonitor:
                 self.stop()
                 break
             except Exception as e:
-                self._logger.error(f"Помилка в циклі: {e}")
+                self._logger.error(f"Помилка: {e}")
                 time.sleep(10)
 
     def _process_frame(self, frame: np.ndarray):
@@ -125,53 +141,49 @@ class GeneratorMonitor:
             self._handle_state_change(frame, bright_pixels)
 
     def _handle_state_change(self, frame: np.ndarray, bright_pixels: int):
-        """Обробка зміни стану"""
+        """Обробка зміни стану з БД"""
         is_on = self._current_state == GeneratorState.ON
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now()
 
         # Логування
         emoji = "🟢" if is_on else "🔴"
         status = "УВІМКНЕНО" if is_on else "ВИМКНЕНО"
-        lamp_status = "світиться" if is_on else "не світиться"
         self._logger.info(f"{emoji} Генератор {status}")
 
-        # Створення повідомлення
-        # message = self._create_state_message(is_on, timestamp, bright_pixels)
-        message = ct.msg_state_lamp.format(
-            emoji=emoji,
-            status=status,
-            timestamp=timestamp,
-            lamp_status=lamp_status,
-            bright_pixels=bright_pixels,
-        )
-
-        # Візуалізація
+        # Збереження знімка
         visual_frame = self._visualizer.visualize(
             frame, self._detector.roi, is_on, bright_pixels
+        )
+        snapshot_path = self._save_snapshot(
+            visual_frame, "generator_on" if is_on else "generator_off"
+        )
+
+        # Робота з БД
+        if is_on:
+            # Генератор увімкнено - починаємо нову сесію
+            self._active_session_id = self._db.start_session(bright_pixels)
+            self._db.add_event("ON", bright_pixels, "Генератор увімкнено")
+        else:
+            # Генератор вимкнено - завершуємо сесію
+            if self._active_session_id:
+                self._db.end_session(self._active_session_id, bright_pixels)
+                self._active_session_id = None
+            self._db.add_event("OFF", bright_pixels, "Генератор вимкнено")
+
+        # Створення повідомлення зі статистикою
+        message = self._create_state_message_with_stats(
+            is_on, timestamp, bright_pixels
         )
 
         # Відправка сповіщень
         self._notifier.send_message(message)
-
-        caption = f"{emoji} <b>{status}</b>\n{timestamp}"
+        caption = f"{emoji} <b>{status}</b>\n{timestamp.strftime('%d.%m.%Y %H:%M:%S')}"
         self._notifier.send_image(visual_frame, caption)
 
-        # Збереження знімка
-        self._save_snapshot(
-            visual_frame, "generator_on" if is_on else "generator_off"
-        )
-
-    @staticmethod
-    def _create_state_message(
-            is_on: bool, timestamp: str, bright_pixels: int
+    def _create_state_message_with_stats(
+        self, is_on: bool, timestamp: datetime, bright_pixels: int
     ) -> str:
-        """
-        Створення повідомлення про стан:
-            - емоджі (червоний або зелений)
-            - статус (УВІМКНЕНО або ВИМКНЕНО)
-            - час
-            - кількість яскравих пікселів
-        """
+        """Створення повідомлення зі статистикою"""
         emoji = "🟢" if is_on else "🔴"
         status = "УВІМКНЕНО" if is_on else "ВИМКНЕНО"
         lamp_status = "світиться" if is_on else "не світиться"
@@ -180,13 +192,40 @@ class GeneratorMonitor:
         message = ct.msg_state_lamp.format(
             emoji=emoji,
             status=status,
-            timestamp=timestamp,
+            timestamp=timestamp.strftime("%d.%m.%Y %H:%M:%S"),
             lamp_status=lamp_status,
             bright_pixels=bright_pixels,
         )
+
+        # Якщо вимкнено - показуємо статистику останньої сесії
+        if not is_on and self._active_session_id:
+            session = self._db.get_session(self._active_session_id)
+            if session and session.duration_hours:
+                fuel_config = self._db.get_fuel_config()
+                message += ct.msg_stat_last_session.format(
+                    duration_hours=round(session.duration_hours, 2),
+                    fuel_consumption_liters=round(
+                        session.fuel_consumption_liters, 2
+                    ),
+                    fuel_cost=round(
+                        session.fuel_consumption_liters
+                        * fuel_config.fuel_price_per_liter,
+                        2,
+                    ),
+                )
+
+        # Статистика за сьогодні
+        today_stats = self._stats.get_today_stats()
+        if today_stats.sessions_count > 0:
+            message += ct.msg_stat_today.format(
+                total_runtime_hours=round(today_stats.total_runtime_hours, 2),
+                total_fuel_liters=round(today_stats.total_fuel_liters, 2),
+                total_cost=round(today_stats.total_cost, 2),
+            )
+
         return message
 
-    def _save_snapshot(self, frame: np.ndarray, prefix: str):
+    def _save_snapshot(self, frame: np.ndarray, prefix: str) -> str:
         """Збереження знімка"""
         import cv2
 
@@ -196,6 +235,7 @@ class GeneratorMonitor:
         )
         cv2.imwrite(filename, frame)
         self._logger.info(f"💾 Знімок: {filename}")
+        return filename
 
     def _send_startup_notification(self):
         """Сповіщення про запуск моніторингу.
@@ -223,8 +263,18 @@ class GeneratorMonitor:
             message = ct.msg_shutdown_monitor.format(
                 date_time=datetime.now().strftime("%d.%m.%Y %H:%M:%S"),
                 duration=round(hours, 2),
-                state_change_count=self._state_change_count
+                state_change_count=self._state_change_count,
             )
 
             # Відправка повідомлення
             self._notifier.send_message(message)
+
+    def send_statistics_report(self, period: str = "today"):
+        """
+        Відправка звіту зі статистикою
+
+        Args:
+            period: Період ('today', 'yesterday', 'week', 'month')
+        """
+        report = self._stats.get_formatted_report(period)
+        self._notifier.send_message(report)

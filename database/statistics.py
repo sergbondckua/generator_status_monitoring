@@ -15,8 +15,8 @@ class DailyStats:
     """Статистика за день"""
 
     date: str
-    total_runtime_hours: float
-    total_fuel_liters: float
+    total_runtime_hours: float | None
+    total_fuel_liters: float | None
     total_cost: float
     sessions_count: int
     avg_session_duration: float
@@ -27,8 +27,8 @@ class MonthlyStats:
     """Статистика за місяць"""
 
     month: str
-    total_runtime_hours: float
-    total_fuel_liters: float
+    total_runtime_hours: float | None
+    total_fuel_liters: float | None
     total_cost: float
     sessions_count: int
     daily_stats: List[DailyStats]

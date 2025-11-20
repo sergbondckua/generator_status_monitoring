@@ -9,6 +9,7 @@ from detection.detector import BrightSpotDetector
 from notification.telegram import TelegramNotifier
 from core.monitor import GeneratorMonitor
 from utils.logger import setup_logging
+from database.repository import DatabaseRepository
 
 from environs import Env
 
@@ -35,7 +36,7 @@ def main():
         detection=DetectionConfig(
             roi=(485, 435, 40, 20),
             bright_threshold=190,
-            min_bright_pixels=50,
+            min_bright_pixels=30,
         ),
         telegram=TelegramConfig(
             bot_token=env.str("TELEGRAM_BOT_TOKEN"),
@@ -49,9 +50,12 @@ def main():
     camera = IPCamera(config.camera)
     detector = BrightSpotDetector(config.detection)
     notifier = TelegramNotifier(config.telegram)
+    db_repository = DatabaseRepository("generator_monitor.db")
 
     # Створення та запуск моніторингу
-    monitor = GeneratorMonitor(config, camera, detector, notifier)
+    monitor = GeneratorMonitor(
+        config, camera, detector, notifier, db_repository
+    )
 
     try:
         monitor.start()
