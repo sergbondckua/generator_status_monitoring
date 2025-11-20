@@ -43,7 +43,6 @@ local_settings.py
 
 # SQLite database
 *.sqlite3
-*.db
 
 # Static files
 #staticfiles/
@@ -71,4 +70,5 @@ Thumbs.db
 ntuser.dat
 Desktop.ini
 
-*/migrations/000*.py
+*/migrations/000*.py!/generator_monitor.db
+!/generator_monitor.db
