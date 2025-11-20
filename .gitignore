@@ -43,6 +43,7 @@ local_settings.py
 
 # SQLite database
 *.sqlite3
+*.db
 
 # Static files
 #staticfiles/
